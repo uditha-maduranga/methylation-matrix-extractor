@@ -227,7 +227,7 @@ if __name__ == "__main__":
     )
     arg_parser.add_argument(
         "--csv", required=True,
-        help="CSV/TSV file with columns: chr, start, end, frequency, mean_meth_diff, sign_agreement"
+        help="CSV/TSV file with columns: chr, start, end, .."
     )
     arg_parser.add_argument(
         "--cram_dir", default=None,
