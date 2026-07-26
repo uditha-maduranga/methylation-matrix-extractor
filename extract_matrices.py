@@ -13,9 +13,10 @@ processing (streamed), rather than holding all matrices in memory and
 writing them out at the end. This keeps memory usage low even with
 thousands of CpGs in the input CSV.
 
-Works with both BAM and CRAM files. CRAM reference-genome handling is done
-internally by BamFileReadParser (see BamFileReadParser.py) -- this script
-does not take or pass a reference genome argument.
+Works with both BAM and CRAM files. If any CRAM files are being processed,
+a reference genome FASTA must be supplied via --reference (CRAM decoding
+requires it to reconstruct read sequences); this is passed through to
+BamFileReadParser. BAM-only runs do not need --reference at all.
 """
 
 import warnings
@@ -48,16 +49,24 @@ logging.basicConfig(
 )
 
 
-def calculate_bin_coverage(input_bam, chrom, start, end, output_dir):
+def calculate_bin_coverage(input_bam, chrom, start, end, output_dir, reference_genome=None):
     """
     Take a single bin, return a matrix. This is passed to a multiprocessing Pool.
     """
     bins_no_reads = 0
-    # Get reads from bam/cram file
-    # NOTE: CRAM reference genome handling is done internally by
-    # BamFileReadParser (see BamFileReadParser.py), so nothing extra is
-    # passed in from here.
-    parser = BamFileReadParser(input_bam, 20, None, None, None, None, True)
+    # Get reads from bam/cram file. reference_genome is required for CRAM
+    # inputs (validated upstream in __main__ / process_sample) and is
+    # forwarded straight through to BamFileReadParser, which uses it to
+    # open the CRAM via pysam's reference_filename=.
+    try:
+        parser = BamFileReadParser(
+            input_bam, 10, None, None, None, None, True,
+            min_base_quality=5,
+            reference_genome=reference_genome,
+        )
+    except (ValueError, FileNotFoundError) as e:
+        logging.error("Could not open %s: %s" % (input_bam, e))
+        return None
 
     try:
         reads = parser.parse_reads(chrom, start, end)
@@ -99,7 +108,7 @@ def calculate_bin_coverage(input_bam, chrom, start, end, output_dir):
     return "%s:%s-%s" % (chrom, start, end), matrix
 
 
-def _bin_worker(bin_tuple, input_bam, output_dir, sample_id):
+def _bin_worker(bin_tuple, input_bam, output_dir, sample_id, reference_genome):
     """
     Process a single CpG bin and write its output file immediately upon
     completion (runs inside a worker process). Returns a small status tuple
@@ -108,7 +117,7 @@ def _bin_worker(bin_tuple, input_bam, output_dir, sample_id):
     """
     chrom, start, end, cpg_chrom, cpg_start = bin_tuple
 
-    result = calculate_bin_coverage(input_bam, chrom, start, end, output_dir)
+    result = calculate_bin_coverage(input_bam, chrom, start, end, output_dir, reference_genome)
     if result is None:
         return (cpg_chrom, cpg_start, False)
 
@@ -150,7 +159,7 @@ def build_bins_from_csv(csv_path, flank):
     return bins
 
 
-def process_sample(cram_file, bins, output_dir, threads):
+def process_sample(cram_file, bins, output_dir, threads, reference_genome=None):
     """
     Run calculate_bin_coverage over all bins for a single CRAM/BAM file.
     Each bin's output file (<SAMPLE_ID>_<Chromosome>_<CpG_START>.bed) is
@@ -165,6 +174,7 @@ def process_sample(cram_file, bins, output_dir, threads):
         input_bam=cram_file,
         output_dir=output_dir,
         sample_id=sample_id,
+        reference_genome=reference_genome,
     )
 
     n_written = 0
@@ -228,6 +238,13 @@ if __name__ == "__main__":
         help="Path to a single CRAM/BAM file (alternative to --cram_dir)"
     )
     arg_parser.add_argument(
+        "--reference", default=None,
+        help="Reference genome FASTA (must have a .fai index alongside it). "
+             "REQUIRED if any of the input files are CRAM -- CRAM decoding "
+             "needs the reference to reconstruct read sequences. Not needed "
+             "for BAM-only input."
+    )
+    arg_parser.add_argument(
         "-o", "--output", default=None,
         help="Folder to save output matrices (default: same dir as input CRAM)"
     )
@@ -248,6 +265,20 @@ if __name__ == "__main__":
     if not cram_files:
         logging.error("No CRAM/BAM files found.")
         sys.exit(1)
+
+    # If any of the input files are CRAM, a reference genome is required.
+    # Fail fast with a clear message rather than letting BamFileReadParser
+    # raise deep inside a worker process for every single bin.
+    cram_present = any(f.endswith(".cram") for f in cram_files)
+    if cram_present and not args.reference:
+        arg_parser.error(
+            "One or more input files are CRAM (%s), which requires a "
+            "reference genome to decode. Please supply --reference "
+            "/path/to/genome.fa (with a .fai index alongside it)."
+            % ", ".join(f for f in cram_files if f.endswith(".cram"))
+        )
+    if args.reference and not os.path.exists(args.reference):
+        arg_parser.error("Reference genome file not found: %s" % args.reference)
 
     # Set output dir
     if not args.output:
@@ -270,6 +301,7 @@ if __name__ == "__main__":
             bins=bins,
             output_dir=output_folder,
             threads=args.threads,
+            reference_genome=args.reference,
         )
 
     logging.info("Done.")
