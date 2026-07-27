@@ -71,7 +71,7 @@ Core dependencies (see [`clubcpg_environment.yml`](./clubcpg_environment.yml) fo
    conda activate clubcpg_env
    ```
 
-4. **Install the custom modified parser (`ParseBamNew.py`).** The `clubcpg` package installed via pip only ships its default `ParseBam.py`; the modified `ParseBamNew.py` in this repo (`./clubcpg_modification/ParseBamNew.py`) needs to be copied into that same installed package directory, since that's where `extract_matrices.py` imports it from (`from clubcpg.ParseBamNew import BamFileReadParser`).
+4. **Add the custom modified parser (`ParseBamNew.py`).** The `clubcpg` package installed via pip only ships its default `ParseBam.py`; the modified `ParseBamNew.py` in this repo (`./clubcpg_modification/ParseBamNew.py`) needs to be added into that same installed package directory, since that's where `extract_matrices.py` imports it from (`from clubcpg.ParseBamNew import BamFileReadParser`).
 
    First, find where `clubcpg` is installed inside your active environment:
 
