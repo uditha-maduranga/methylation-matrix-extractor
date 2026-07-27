@@ -6,6 +6,12 @@ Given a list of CpG coordinates and one or more single-ended BAM/CRAM files, thi
 
 ---
 
+<p align="center">
+  <img src="./methylation-matrix-extractor.svg" alt="Methylation Matrix Extractor" width="800">
+</p>
+
+---
+
 ## Table of contents
 
 - [Features](#features)
